@@ -1,0 +1,8 @@
+.DS_Store
+node_modules/
+out/
+.vite/
+*.tsbuildinfo
+.eslintcache
+coverage/
+.env

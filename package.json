@@ -1,0 +1,60 @@
+{
+  "name": "grove",
+  "productName": "Grove",
+  "version": "0.1.0",
+  "description": "Terminal harness for organizing many Claude Code sessions in one window",
+  "main": ".vite/build/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "publish": "electron-forge publish",
+    "lint": "eslint --ext .ts,.tsx .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "electron",
+    "terminal",
+    "claude",
+    "tmux",
+    "macos"
+  ],
+  "author": {
+    "name": "Crowvic"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-deb": "^7.11.2",
+    "@electron-forge/maker-rpm": "^7.11.2",
+    "@electron-forge/maker-squirrel": "^7.11.2",
+    "@electron-forge/maker-zip": "^7.11.2",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.11.2",
+    "@electron-forge/plugin-fuses": "^7.11.2",
+    "@electron-forge/plugin-vite": "^7.11.2",
+    "@electron/fuses": "^1.8.0",
+    "@types/electron-squirrel-startup": "^1.0.2",
+    "@types/node": "^26.1.2",
+    "@typescript-eslint/eslint-plugin": "^5.62.0",
+    "@typescript-eslint/parser": "^5.62.0",
+    "electron": "43.2.0",
+    "eslint": "^8.57.1",
+    "eslint-plugin-import": "^2.32.0",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "electron-squirrel-startup": "^1.0.1",
+    "node-pty": "^1.0.0"
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true,
+    "esbuild@0.21.5": true,
+    "fsevents@2.3.3": true
+  }
+}
