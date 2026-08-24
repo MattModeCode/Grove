@@ -3,10 +3,10 @@ import type { PaneView } from './pane';
 
 const MIN_RATIO = 0.08;
 
-const sumUpTo = (ratios: number[], index: number): number =>
+export const sumUpTo = (ratios: number[], index: number): number =>
   ratios.slice(0, index + 1).reduce((total, ratio) => total + ratio, 0);
 
-const shiftAdjacent = (ratios: number[], index: number, deltaFraction: number): number[] => {
+export const shiftAdjacent = (ratios: number[], index: number, deltaFraction: number): number[] => {
   const next = [...ratios];
   const a = next[index] + deltaFraction;
   const b = next[index + 1] - deltaFraction;
@@ -32,13 +32,20 @@ const attachDividerDrag = (
     const startPos = axis === 'column' ? downEvent.clientX : downEvent.clientY;
     const startRatios = getRatios();
     const containerSize = getContainerSizePx();
+    let pendingFrame: number | null = null;
+    let latestPos = startPos;
 
     const onMove = (moveEvent: PointerEvent): void => {
-      const pos = axis === 'column' ? moveEvent.clientX : moveEvent.clientY;
-      const deltaFraction = (pos - startPos) / containerSize;
-      onDrag(shiftAdjacent(startRatios, index, deltaFraction));
+      latestPos = axis === 'column' ? moveEvent.clientX : moveEvent.clientY;
+      if (pendingFrame !== null) return;
+      pendingFrame = requestAnimationFrame(() => {
+        pendingFrame = null;
+        const deltaFraction = (latestPos - startPos) / containerSize;
+        onDrag(shiftAdjacent(startRatios, index, deltaFraction));
+      });
     };
     const onUp = (): void => {
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       onCommit();
@@ -53,6 +60,7 @@ export const renderGrid = (
   tab: TabState,
   paneViews: Map<string, PaneView>,
   onRatiosChange: (columnRatios: number[], rowRatios: number[]) => void,
+  refitPane: (view: PaneView) => void,
 ): void => {
   container.innerHTML = '';
   const { columns, rows } = gridDimensions(tab.gridPreset);
@@ -75,6 +83,13 @@ export const renderGrid = (
 
   container.appendChild(grid);
 
+  const refitPanes = (): void => {
+    tab.panes.forEach((pane) => {
+      const view = paneViews.get(pane.id);
+      if (view !== undefined) refitPane(view);
+    });
+  };
+
   for (let i = 0; i < columns - 1; i += 1) {
     const divider = document.createElement('div');
     divider.className = 'divider divider-column';
@@ -89,6 +104,7 @@ export const renderGrid = (
         columnRatios = next;
         applyTemplate();
         divider.style.left = `${sumUpTo(columnRatios, i) * 100}%`;
+        refitPanes();
       },
       () => container.clientWidth,
       () => onRatiosChange(columnRatios, rowRatios),
@@ -109,6 +125,7 @@ export const renderGrid = (
         rowRatios = next;
         applyTemplate();
         divider.style.top = `${sumUpTo(rowRatios, i) * 100}%`;
+        refitPanes();
       },
       () => container.clientHeight,
       () => onRatiosChange(columnRatios, rowRatios),

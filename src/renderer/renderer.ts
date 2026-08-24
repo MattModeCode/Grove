@@ -25,8 +25,16 @@ const HOME_PLACEHOLDER = '~';
 
 const ensurePaneView = (pane: PaneState): PaneView => {
   const existing = paneViews.get(pane.id);
-  if (existing !== undefined) return existing;
-  const view = createPaneView(pane);
+  if (existing !== undefined) {
+    existing.pane = pane;
+    if (existing.nameEl.textContent !== pane.name) existing.nameEl.textContent = pane.name;
+    return existing;
+  }
+  const view = createPaneView(pane, {
+    onRenamePane: (paneId, name) => {
+      void window.grove.renamePane(paneId, name).then(refresh);
+    },
+  });
   paneViews.set(pane.id, view);
   return view;
 };
@@ -70,9 +78,15 @@ const render = (): void => {
   }
 
   tab.panes.forEach(ensurePaneView);
-  renderGrid(gridEl, tab, paneViews, (columnRatios, rowRatios) => {
-    void window.grove.setRatios(tab.id, columnRatios, rowRatios);
-  });
+  renderGrid(
+    gridEl,
+    tab,
+    paneViews,
+    (columnRatios, rowRatios) => {
+      void window.grove.setRatios(tab.id, columnRatios, rowRatios);
+    },
+    resizeToFit,
+  );
 
   requestAnimationFrame(() => {
     tab.panes.forEach((pane) => {
