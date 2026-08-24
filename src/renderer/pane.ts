@@ -24,17 +24,38 @@ const ANSI_PALETTE = [
   '#E5E5E5',
 ] as const;
 
+export interface PaneCallbacks {
+  onRenamePane: (paneId: string, name: string) => void;
+}
+
 export interface PaneView {
   el: HTMLElement;
+  nameEl: HTMLElement;
   term: Terminal;
   fit: FitAddon;
   pane: PaneState;
 }
 
-export const createPaneView = (pane: PaneState): PaneView => {
+export const createPaneView = (pane: PaneState, callbacks: PaneCallbacks): PaneView => {
   const el = document.createElement('div');
   el.className = 'pane';
   el.dataset.paneId = pane.id;
+
+  const header = document.createElement('div');
+  header.className = 'pane-header';
+  const nameEl = document.createElement('span');
+  nameEl.className = 'pane-name';
+  nameEl.textContent = pane.name;
+  header.appendChild(nameEl);
+  header.addEventListener('dblclick', () => {
+    const name = window.prompt('Rename session', nameEl.textContent ?? '');
+    if (name !== null && name.trim() !== '') callbacks.onRenamePane(pane.id, name.trim());
+  });
+  el.appendChild(header);
+
+  const termEl = document.createElement('div');
+  termEl.className = 'pane-term';
+  el.appendChild(termEl);
 
   const term = new Terminal({
     fontFamily: 'Monaco, Menlo, monospace',
@@ -67,10 +88,10 @@ export const createPaneView = (pane: PaneState): PaneView => {
 
   const fit = new FitAddon();
   term.loadAddon(fit);
-  term.open(el);
+  term.open(termEl);
   term.onData((data) => window.grove.sendInput(pane.id, data));
 
-  return { el, term, fit, pane };
+  return { el, nameEl, term, fit, pane };
 };
 
 export const resizeToFit = (view: PaneView): void => {
