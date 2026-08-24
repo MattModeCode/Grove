@@ -1,38 +1,28 @@
 # Grove
 
-A terminal harness for running many Claude Code sessions at once.
+A desktop app for running several Claude Code sessions side by side, in one window.
 
-Click **+ session** to launch a `claude --dangerously-skip-permissions` session
-(⌥-click for a plain shell). Sessions are named panes inside tabs; each tab
-picks a grid layout — 1, 2, 4, 6, or 8 up — and the dividers between panes
-drag to resize. `⌘K` opens a search palette to jump straight to any pane by
-name, cwd, or tab.
+Each tab holds a grid of panes — 1, 2, 4, 6, or 8 at a time. Drag the dividers to resize. Double-click a tab or a pane to rename it. Press `⌘K` to search and jump to any session.
 
-Every pane is backed by a `tmux` session (`grove-<id>`). Closing Grove, or it
-crashing, does not end a running Claude Code session — the tmux server keeps
-it alive, and Grove reattaches on next launch. Closing a pane from the UI
-does kill its session.
-
-Theme mirrors the macOS Terminal.app "Pro" profile: black background, Monaco
-10pt, no font antialiasing.
+Grove runs each session in `tmux`, so closing the app (or a crash) doesn't kill your work — reopen Grove and everything is still there.
 
 ## Requirements
 
 - macOS
-- [tmux](https://github.com/tmux/tmux) (`brew install tmux`)
-- Claude Code CLI (`claude`) on `$PATH`
+- [tmux](https://github.com/tmux/tmux) — `brew install tmux`
+- The Claude Code CLI (`claude`) on your `$PATH`
+
+## Running it
+
+```sh
+npm install
+npm start
+```
 
 ## Development
 
 ```sh
-npm install
-npm start        # electron-forge dev
-npm test         # vitest
+npm test         # run tests
 npm run typecheck
 npm run lint
 ```
-
-## Status
-
-Standalone app — not yet wired into ChinOS. Search indexes pane name, cwd,
-and tab name; scrollback search is not implemented.
