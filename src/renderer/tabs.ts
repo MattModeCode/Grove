@@ -1,3 +1,4 @@
+import { startInlineRename } from './inline-rename';
 import { GRID_PRESETS, type GridPreset, type GroveState, type PaneKind } from '../shared/types';
 
 export interface TabsCallbacks {
@@ -18,12 +19,16 @@ export const renderTabs = (container: HTMLElement, state: GroveState, callbacks:
   state.tabs.forEach((tab) => {
     const el = document.createElement('div');
     el.className = tab.id === state.activeTabId ? 'tab active' : 'tab';
-    el.textContent = tab.name;
     el.addEventListener('click', () => callbacks.onSelectTab(tab.id));
-    el.addEventListener('dblclick', () => {
-      const name = window.prompt('Rename tab', tab.name);
-      if (name !== null && name.trim() !== '') callbacks.onRenameTab(tab.id, name.trim());
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'tab-name';
+    nameSpan.textContent = tab.name;
+    nameSpan.addEventListener('dblclick', (event) => {
+      event.stopPropagation();
+      startInlineRename(nameSpan, tab.name, (name) => callbacks.onRenameTab(tab.id, name));
     });
+    el.appendChild(nameSpan);
 
     const close = document.createElement('span');
     close.className = 'tab-close';
