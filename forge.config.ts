@@ -11,11 +11,17 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
-    icon: path.join(__dirname, 'assets', 'icon'),
     // node-pty ships a native .node binding — an asar archive is read-only,
     // so it cannot be executed from inside one. AutoUnpackNativesPlugin below
-    // moves it (and any other native module) out to app.asar.unpacked.
+    // moves it (and any other native module) out to app.asar.unpacked. That
+    // plugin's own glob only matches *.node files, but node-pty also needs
+    // its extensionless `spawn-helper` executable unpacked — without this,
+    // every pane spawn fails with "posix_spawnp failed" because helperPath
+    // resolves to a path inside the read-only archive.
+    asar: {
+      unpack: '**/node-pty/build/Release/spawn-helper',
+    },
+    icon: path.join(__dirname, 'assets', 'icon'),
     ignore: [/^\/out/, /^\/tests/, /^\/docs/, /^\/\.git/, /^\/\.vscode/],
   },
   rebuildConfig: {},

@@ -1,8 +1,9 @@
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import started from 'electron-squirrel-startup';
 import type { IPty } from 'node-pty';
 import { detachPane, resizePane, spawnPane, writeToPane } from './pty';
@@ -27,6 +28,7 @@ const tmuxRunner = createTmuxRunner();
 let state: GroveState = { tabs: [], activeTabId: null };
 const liveProcs = new Map<string, IPty>();
 let activeWindow: BrowserWindow | null = null;
+let isQuitting = false;
 
 const persist = (): void => {
   void saveState(STATE_PATH, state);
@@ -43,9 +45,41 @@ const newTab = (name: string): TabState => ({
 
 const findTab = (tabId: string): TabState | undefined => state.tabs.find((tab) => tab.id === tabId);
 
-// The renderer has no filesystem access to resolve $HOME itself, so it sends
-// the '~' placeholder and this is the one place that expands it.
-const resolveCwd = (cwd: string): string => (cwd === '' || cwd === '~' ? os.homedir() : cwd);
+// The renderer has no filesystem access to resolve a default cwd itself, so
+// it sends the '~' placeholder and this is the one place that expands it.
+// Grove exists to run Claude Code sessions against the chin project, so new
+// sessions default there rather than $HOME.
+const DEFAULT_CWD = path.join(os.homedir(), 'chin');
+const resolveCwd = (cwd: string): string => (cwd === '' || cwd === '~' ? DEFAULT_CWD : cwd);
+
+// A GUI-launched app (Finder, /Applications, LaunchServices) inherits
+// launchd's minimal PATH, not the interactive shell's — so a Homebrew-installed
+// `tmux` at /opt/homebrew/bin is invisible here even though it works fine when
+// Grove is started from a terminal. Replace process.env.PATH once, up front,
+// with what a real login shell resolves, so every later tmux/pty spawn finds it.
+const fixPathFromLoginShell = (): void => {
+  try {
+    const shell = process.env.SHELL ?? '/bin/zsh';
+    const output = execFileSync(shell, ['-lic', 'echo -n "$PATH"'], { encoding: 'utf8' });
+    // Some shell setups print a startup banner (e.g. macOS's session-restore
+    // notice) to stdout before running our command — that text comes first,
+    // so the PATH itself is reliably the last line of output.
+    const lines = output.trim().split('\n');
+    const loginPath = lines[lines.length - 1];
+    if (loginPath.trim() !== '') process.env.PATH = loginPath;
+  } catch {
+    // Best effort — if the login shell can't be probed, fall back to launchd's PATH.
+  }
+};
+
+// A pty's data/exit events are async and can still be in flight the instant
+// its window is torn down (on quit, or when the user closes it) — sending on
+// a destroyed webContents throws "Object has been destroyed", so every send
+// checks isDestroyed() first rather than trusting the activeWindow reference.
+const sendToActiveWindow = (channel: string, payload: unknown): void => {
+  if (activeWindow === null || activeWindow.isDestroyed() || activeWindow.webContents.isDestroyed()) return;
+  activeWindow.webContents.send(channel, payload);
+};
 
 const attachPane = (pane: PaneState): void => {
   const proc = spawnPane({
@@ -56,11 +90,11 @@ const attachPane = (pane: PaneState): void => {
     rows: DEFAULT_ROWS,
     configPath: TMUX_CONFIG_PATH,
     onData: (data) => {
-      activeWindow?.webContents.send(CHANNELS.ptyData, { paneId: pane.id, data });
+      sendToActiveWindow(CHANNELS.ptyData, { paneId: pane.id, data });
     },
     onExit: (exitCode) => {
       liveProcs.delete(pane.id);
-      activeWindow?.webContents.send(CHANNELS.ptyExit, { paneId: pane.id, exitCode });
+      sendToActiveWindow(CHANNELS.ptyExit, { paneId: pane.id, exitCode });
     },
   });
   liveProcs.set(pane.id, proc);
@@ -72,6 +106,26 @@ const spawnAllPersistedPanes = (): void => {
       attachPane(pane);
     }
   }
+};
+
+// Grove no longer reattaches sessions across launches — every quit or tab
+// close kills the underlying tmux sessions outright, so there is nothing
+// left to reattach to next time.
+const killAllPanes = async (panes: readonly PaneState[]): Promise<void> => {
+  for (const pane of panes) {
+    const proc = liveProcs.get(pane.id);
+    if (proc !== undefined) {
+      detachPane(proc);
+      liveProcs.delete(pane.id);
+    }
+    await tmuxRunner.run(buildKillArgs(pane.tmuxName));
+  }
+};
+
+const resetAllTabs = async (): Promise<void> => {
+  await killAllPanes(state.tabs.flatMap((tab) => tab.panes));
+  state = { tabs: [], activeTabId: null };
+  persist();
 };
 
 const createWindow = (): void => {
@@ -88,6 +142,31 @@ const createWindow = (): void => {
   });
 
   activeWindow = mainWindow;
+  mainWindow.on('closed', () => {
+    if (activeWindow === mainWindow) activeWindow = null;
+  });
+
+  // macOS's window-all-closed leaves the app running in the background by
+  // default — the traffic-light close button here should actually quit, not
+  // just hide the window, so intercept it and confirm before app.quit().
+  mainWindow.on('close', (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'question',
+      buttons: ['Quit', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      message: 'Quit Grove?',
+      detail: 'All sessions will be closed.',
+    });
+    if (choice === 0) {
+      void resetAllTabs().then(() => {
+        isQuitting = true;
+        app.quit();
+      });
+    }
+  });
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
@@ -160,17 +239,15 @@ ipcMain.handle(CHANNELS.createTab, (_event, name: string): TabState => {
 ipcMain.handle(CHANNELS.closeTab, async (_event, tabId: string): Promise<void> => {
   const tab = findTab(tabId);
   if (tab === undefined) return;
-  for (const pane of tab.panes) {
-    const proc = liveProcs.get(pane.id);
-    if (proc !== undefined) {
-      detachPane(proc);
-      liveProcs.delete(pane.id);
-    }
-    await tmuxRunner.run(buildKillArgs(pane.tmuxName));
-  }
+  await killAllPanes(tab.panes);
   state.tabs = state.tabs.filter((candidate) => candidate.id !== tabId);
+  // Closing the last tab resets Grove to one fresh, empty tab rather than
+  // leaving the window with nothing in it.
+  if (state.tabs.length === 0) {
+    state.tabs.push(newTab('Tab 1'));
+  }
   if (state.activeTabId === tabId) {
-    state.activeTabId = state.tabs.length > 0 ? state.tabs[0].id : null;
+    state.activeTabId = state.tabs[0].id;
   }
   persist();
 });
@@ -215,6 +292,7 @@ ipcMain.on(CHANNELS.ptyResize, (_event, message: { paneId: string; cols: number;
 });
 
 app.on('ready', async () => {
+  fixPathFromLoginShell();
   fs.mkdirSync(app.getPath('userData'), { recursive: true });
   fs.writeFileSync(TMUX_CONFIG_PATH, tmuxConfigContents);
   state = await loadState(STATE_PATH);
