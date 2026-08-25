@@ -10,12 +10,17 @@ export interface TmuxRunner {
 
 export const sessionName = (paneId: string): string => `grove-${paneId}`;
 
-export const claudeCommand = (): string => 'claude --dangerously-skip-permissions';
+// tmux runs this as a non-interactive, non-login shell command, which on
+// macOS skips .zprofile/.zshrc — so a `claude` installed via nvm/homebrew's
+// user-local bin can be absent from PATH. `-lic` forces the login+interactive
+// shell startup that sources those files before exec'ing claude.
+export const claudeCommand = (env: NodeJS.ProcessEnv = process.env): string =>
+  `${shellCommand(env)} -lic 'claude --dangerously-skip-permissions'`;
 
 export const shellCommand = (env: NodeJS.ProcessEnv = process.env): string => env.SHELL ?? '/bin/zsh';
 
 export const commandFor = (kind: PaneKind, env: NodeJS.ProcessEnv = process.env): string =>
-  kind === 'claude' ? claudeCommand() : shellCommand(env);
+  kind === 'claude' ? claudeCommand(env) : shellCommand(env);
 
 // tmux's own status line is chrome Grove doesn't want — the tab bar and pane
 // grid already show what a status line would. `-f` is read once, when a

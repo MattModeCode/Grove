@@ -1,5 +1,6 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
+import { startInlineRename } from './inline-rename';
 import type { PaneState } from '../shared/types';
 
 // Decoded from `defaults export com.apple.Terminal -` — the "Pro" profile's
@@ -48,8 +49,7 @@ export const createPaneView = (pane: PaneState, callbacks: PaneCallbacks): PaneV
   nameEl.textContent = pane.name;
   header.appendChild(nameEl);
   header.addEventListener('dblclick', () => {
-    const name = window.prompt('Rename session', nameEl.textContent ?? '');
-    if (name !== null && name.trim() !== '') callbacks.onRenamePane(pane.id, name.trim());
+    startInlineRename(nameEl, pane.name, (name) => callbacks.onRenamePane(pane.id, name));
   });
   el.appendChild(header);
 
